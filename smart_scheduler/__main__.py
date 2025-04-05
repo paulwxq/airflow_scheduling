@@ -111,6 +111,9 @@ def init_database():
     except Exception as e:
         print(f"数据库初始化失败: {str(e)}")
         raise
+    finally:
+        # 关闭数据库连接
+        pg_connector.close()
 
 
 def run_api_server(host, port, debug):
@@ -121,9 +124,33 @@ def run_api_server(host, port, debug):
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # 创建API并运行
+    # 创建API
     api = SchedulerAPI()
-    api.run(host=host, port=port, debug=debug)
+    
+    # 设置信号处理程序
+    import signal
+    import atexit
+    
+    def cleanup_resources(signal_received=None, frame=None):
+        """清理资源"""
+        print("正在关闭服务器并释放资源...")
+        api.close()
+        print("资源已释放")
+        
+    # 注册信号处理程序
+    signal.signal(signal.SIGINT, cleanup_resources)
+    signal.signal(signal.SIGTERM, cleanup_resources)
+    
+    # 注册退出处理程序
+    atexit.register(cleanup_resources)
+    
+    try:
+        # 运行API服务器
+        api.run(host=host, port=port, debug=debug)
+    except KeyboardInterrupt:
+        print("检测到键盘中断，正在停止服务器...")
+    finally:
+        cleanup_resources()
 
 
 def main():

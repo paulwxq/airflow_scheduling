@@ -4,31 +4,23 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.dummy import DummyOperator
-from airflow.models import Variable
 from airflow.utils.task_group import TaskGroup
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import logging
 import os
 import sys
 import requests
 
+# 导入配置
+from config import (
+    DEFAULT_ARGS, DAILY_SCHEDULE, SCHEDULER_API_URL, 
+    MAX_POLL_TIME_MINUTES, POLL_INTERVAL_SECONDS,
+    API_TIMEOUT_SHORT, API_TIMEOUT_MEDIUM, API_TIMEOUT_LONG,
+    get_dag_id
+)
+
 # 添加项目路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# 加载配置
-config_path = Variable.get('scheduler_config_path', '/etc/smart_scheduler/config.json')
-scheduler_api_url = Variable.get('scheduler_api_url', 'http://localhost:5000')
-
-# 默认参数
-default_args = {
-    'owner': 'airflow',
-    'depends_on_past': False,
-    'email_on_failure': True,
-    'email_on_retry': False,
-    'retries': int(Variable.get('default_retries', '5')),
-    'retry_delay': timedelta(minutes=int(Variable.get('retry_delay_minutes', '1'))),
-}
 
 # 定义获取日级调度表的函数
 def get_daily_tables(**context):
@@ -36,15 +28,15 @@ def get_daily_tables(**context):
     try:
         # 强制刷新依赖图
         refresh_response = requests.post(
-            f"{scheduler_api_url}/api/v1/dependency/refresh",
-            timeout=30
+            f"{SCHEDULER_API_URL}/api/v1/dependency/refresh",
+            timeout=API_TIMEOUT_SHORT
         )
         refresh_response.raise_for_status()
         
         # 获取日级调度表
         tables_response = requests.get(
-            f"{scheduler_api_url}/api/v1/tables?frequency=daily",
-            timeout=30
+            f"{SCHEDULER_API_URL}/api/v1/tables?frequency=daily",
+            timeout=API_TIMEOUT_SHORT
         )
         tables_response.raise_for_status()
         
@@ -78,9 +70,9 @@ def generate_execution_plan(**context):
         
         # 调用API生成执行计划
         plan_response = requests.post(
-            f"{scheduler_api_url}/api/v1/plan/generate",
+            f"{SCHEDULER_API_URL}/api/v1/plan/generate",
             json={"tables": tables, "include_dependencies": True},
-            timeout=60
+            timeout=API_TIMEOUT_MEDIUM
         )
         plan_response.raise_for_status()
         
@@ -103,9 +95,9 @@ def execute_table(table_name, **context):
         
         # 调用API执行表处理
         execute_response = requests.post(
-            f"{scheduler_api_url}/api/v1/execute/immediate",
+            f"{SCHEDULER_API_URL}/api/v1/execute/immediate",
             json={"table_name": table_name},
-            timeout=300
+            timeout=API_TIMEOUT_LONG
         )
         execute_response.raise_for_status()
         
@@ -115,14 +107,12 @@ def execute_table(table_name, **context):
         logging.info(f"表 {table_name} 处理已开始，执行ID: {execution_id}")
         
         # 轮询执行状态
-        max_poll_time = 30  # 最大轮询时间（分钟）
-        poll_interval = 10  # 轮询间隔（秒）
         start_time = datetime.now()
         
-        while (datetime.now() - start_time).total_seconds() < max_poll_time * 60:
+        while (datetime.now() - start_time).total_seconds() < MAX_POLL_TIME_MINUTES * 60:
             status_response = requests.get(
-                f"{scheduler_api_url}/api/v1/status/{execution_id}",
-                timeout=30
+                f"{SCHEDULER_API_URL}/api/v1/status/{execution_id}",
+                timeout=API_TIMEOUT_SHORT
             )
             status_response.raise_for_status()
             
@@ -140,7 +130,7 @@ def execute_table(table_name, **context):
             
             logging.info(f"表 {table_name} 处理中，状态: {status}")
             import time
-            time.sleep(poll_interval)
+            time.sleep(POLL_INTERVAL_SECONDS)
         
         # 超时处理
         logging.warning(f"表 {table_name} 处理超时，请检查状态")
@@ -152,10 +142,10 @@ def execute_table(table_name, **context):
 
 # 创建DAG
 with DAG(
-    'daily_scheduler',
-    default_args=default_args,
+    get_dag_id('daily'),
+    default_args=DEFAULT_ARGS,
     description='每日执行的调度DAG',
-    schedule_interval='0 1 * * *',  # 每天凌晨1点执行
+    schedule_interval=DAILY_SCHEDULE,
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=['smart_scheduler', 'daily'],

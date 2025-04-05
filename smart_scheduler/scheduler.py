@@ -10,6 +10,12 @@ import threading
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from .config import (
+    PG_CONN_STRING, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD,
+    AIRFLOW_API_URL, AIRFLOW_USER, AIRFLOW_PASSWORD,
+    API_HOST, API_PORT, DEBUG, UPDATE_CHECK_INTERVAL,
+    configure_logging
+)
 from .core.dependency_manager import DependencyManager
 from .core.dag_generator import DAGManager
 from .api.app import SchedulerAPI
@@ -46,6 +52,9 @@ class Scheduler:
             
         logger.info("开始初始化调度器...")
         
+        # 配置日志
+        configure_logging()
+        
         # 加载配置
         self.config = self._load_config(config_file)
         
@@ -79,7 +88,7 @@ class Scheduler:
         )
         
         # 更新检查间隔（秒）
-        self.update_check_interval = int(self.config.get('update_check_interval', 900))  # 默认15分钟
+        self.update_check_interval = int(self.config.get('update_check_interval', UPDATE_CHECK_INTERVAL))
         
         # 控制标志
         self.running = False
@@ -106,23 +115,23 @@ class Scheduler:
             except Exception as e:
                 logger.error(f"加载配置文件失败: {str(e)}")
         
-        # 默认配置
+        # 使用config.py中的默认配置
         logger.info("使用默认配置")
         return {
-            'postgresql': os.getenv('PG_CONN_STRING', 'postgresql://postgres:postgres@localhost:5432/dataops'),
+            'postgresql': PG_CONN_STRING,
             'neo4j': {
-                'uri': os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
-                'user': os.getenv('NEO4J_USER', 'neo4j'),
-                'password': os.getenv('NEO4J_PASSWORD', 'neo4j')
+                'uri': NEO4J_URI,
+                'user': NEO4J_USER,
+                'password': NEO4J_PASSWORD
             },
             'airflow': {
-                'api_url': os.getenv('AIRFLOW_API_URL', 'http://localhost:8080/api/v1'),
-                'auth': (os.getenv('AIRFLOW_USER', 'airflow'), os.getenv('AIRFLOW_PASSWORD', 'airflow'))
+                'api_url': AIRFLOW_API_URL,
+                'auth': (AIRFLOW_USER, AIRFLOW_PASSWORD)
             },
-            'update_check_interval': int(os.getenv('UPDATE_CHECK_INTERVAL', '900')),  # 15分钟
-            'api_host': os.getenv('API_HOST', '0.0.0.0'),
-            'api_port': int(os.getenv('API_PORT', '5000')),
-            'debug': os.getenv('DEBUG', 'false').lower() == 'true'
+            'update_check_interval': UPDATE_CHECK_INTERVAL,
+            'api_host': API_HOST,
+            'api_port': API_PORT,
+            'debug': DEBUG
         }
     
     def start(self) -> None:
@@ -151,9 +160,9 @@ class Scheduler:
         logger.info("已启动依赖图更新检查线程")
         
         # 启动API服务
-        api_host = self.config.get('api_host', '0.0.0.0')
-        api_port = int(self.config.get('api_port', 5000))
-        debug_mode = self.config.get('debug', False)
+        api_host = self.config.get('api_host', API_HOST)
+        api_port = int(self.config.get('api_port', API_PORT))
+        debug_mode = self.config.get('debug', DEBUG)
         
         logger.info(f"启动API服务在 {api_host}:{api_port}, 调试模式: {debug_mode}")
         try:
@@ -183,6 +192,10 @@ class Scheduler:
         # 关闭Neo4j连接
         logger.info("关闭Neo4j连接...")
         self.neo4j_conn.close()
+        
+        # 关闭PostgreSQL连接
+        logger.info("关闭PostgreSQL连接...")
+        self.pg_conn.close()
         
         # 执行清理任务
         logger.info("执行清理任务...")

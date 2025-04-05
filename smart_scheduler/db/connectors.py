@@ -9,6 +9,13 @@ from neo4j import GraphDatabase
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple, Union
 
+# 尝试导入配置模块
+try:
+    from ..config import PG_CONN_STRING, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+    HAS_CONFIG = True
+except ImportError:
+    HAS_CONFIG = False
+
 # 设置日志
 logger = logging.getLogger(__name__)
 
@@ -21,11 +28,15 @@ class PostgreSQLConnector:
         初始化PostgreSQL连接器
         
         Args:
-            conn_string: 数据库连接字符串，如果为None则从环境变量获取
+            conn_string: 数据库连接字符串，如果为None则从配置或环境变量获取
         """
         if conn_string is None:
-            # 从环境变量获取连接信息
-            conn_string = os.getenv('PG_CONN_STRING', 'postgresql://postgres:postgres@localhost:5432/dataops')
+            # 首先尝试从配置模块获取
+            if HAS_CONFIG:
+                conn_string = PG_CONN_STRING
+            else:
+                # 从环境变量获取连接信息
+                conn_string = os.getenv('PG_CONN_STRING', 'postgresql://postgres:postgres@localhost:5432/dataops')
         
         self.conn_string = conn_string
         # 创建连接池
@@ -34,7 +45,13 @@ class PostgreSQLConnector:
             maxconn=10,
             dsn=conn_string
         )
-        logger.info(f"初始化PostgreSQL连接池: {conn_string.split('@')[1]}")
+        logger.info(f"初始化PostgreSQL连接池: {conn_string.split('@')[1] if '@' in conn_string else conn_string}")
+    
+    def close(self):
+        """关闭连接池"""
+        if self.pool:
+            self.pool.closeall()
+            logger.info("PostgreSQL连接池已关闭")
     
     def get_connection(self):
         """获取数据库连接"""
@@ -404,10 +421,19 @@ class Neo4jConnector:
         初始化Neo4j连接器
         
         Args:
-            uri: Neo4j服务器URI，如果为None则从环境变量获取
-            user: 用户名，如果为None则从环境变量获取
-            password: 密码，如果为None则从环境变量获取
+            uri: Neo4j服务器URI，如果为None则从配置或环境变量获取
+            user: 用户名，如果为None则从配置或环境变量获取
+            password: 密码，如果为None则从配置或环境变量获取
         """
+        # 首先尝试从配置模块获取
+        if uri is None and HAS_CONFIG:
+            uri = NEO4J_URI
+        if user is None and HAS_CONFIG:
+            user = NEO4J_USER
+        if password is None and HAS_CONFIG:
+            password = NEO4J_PASSWORD
+            
+        # 如果仍为None，从环境变量获取
         self.uri = uri or os.getenv('NEO4J_URI', 'bolt://localhost:7687')
         self.user = user or os.getenv('NEO4J_USER', 'neo4j')
         self.password = password or os.getenv('NEO4J_PASSWORD', 'neo4j')

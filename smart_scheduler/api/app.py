@@ -36,6 +36,19 @@ class SchedulerAPI:
         
         logger.info("调度API初始化完成")
     
+    def close(self):
+        """关闭API服务器并释放资源"""
+        logger.info("正在关闭API服务器和资源...")
+        # 关闭PostgreSQL连接
+        if hasattr(self, 'pg_connector'):
+            self.pg_connector.close()
+        
+        # 关闭Neo4j连接 (通过dependency_manager)
+        if hasattr(self, 'dependency_manager') and hasattr(self.dependency_manager, 'neo4j_connector'):
+            self.dependency_manager.neo4j_connector.close()
+        
+        logger.info("API服务器资源已释放")
+    
     def _setup_routes(self) -> None:
         """设置API路由"""
         # 依赖图管理

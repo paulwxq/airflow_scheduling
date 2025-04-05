@@ -26,10 +26,16 @@
 airflow_scheduling/
 ├── .venv/                # Python虚拟环境
 ├── dags/                 # Airflow DAG定义
-│   └── smart_scheduler_dag.py  # 示例DAG
+│   ├── config.py         # Airflow DAG配置文件
+│   ├── smart_scheduler_dag.py  # 示例DAG
+│   ├── daily_scheduler_dag.py  # 日级调度DAG
+│   ├── hourly_scheduler_dag.py # 小时级调度DAG
+│   ├── weekly_scheduler_dag.py # 周级调度DAG
+│   └── monthly_scheduler_dag.py # 月级调度DAG
 ├── smart_scheduler/      # 核心调度系统
 │   ├── __init__.py
 │   ├── __main__.py       # 程序入口点
+│   ├── config.py         # 系统配置文件
 │   ├── api/              # API接口层
 │   │   ├── __init__.py
 │   │   └── app.py        # Flask API应用
@@ -141,3 +147,75 @@ print(status_response.json())
 ## 许可证
 
 [MIT](LICENSE) 
+
+## 开发最佳实践
+
+### 数据库连接管理
+
+本项目采用以下数据库连接管理策略：
+
+1. **连接池**: 使用PostgreSQL的ThreadedConnectionPool管理数据库连接，提高性能并降低资源消耗。
+
+2. **资源释放**: 所有数据库连接器都实现了`close()`方法，应用程序在退出前应正确调用这些方法释放资源。
+
+3. **信号处理**: 主应用程序注册了SIGINT和SIGTERM信号处理程序，确保在应用终止时清理资源。
+
+4. **异常安全**: 使用try-finally结构确保即使发生异常，也能正确关闭数据库连接。
+
+示例：
+```python
+# 获取连接
+conn = None
+try:
+    conn = db_connector.get_connection()
+    # 执行操作...
+finally:
+    if conn:
+        db_connector.release_connection(conn)
+
+# 应用程序退出时
+db_connector.close()
+```
+
+### 配置管理
+
+本项目采用分层配置管理策略，便于在不同环境中部署和配置：
+
+1. **配置文件结构**:
+   - `smart_scheduler/config.py`: 应用端配置，包含所有智能调度系统运行所需的参数
+   - `dags/config.py`: Airflow端配置，包含DAG文件所需的参数
+
+2. **配置优先级**:
+   - 环境变量（最高优先级）
+   - 本地配置文件覆盖（config_local.py）
+   - 默认配置值（config.py中定义）
+
+3. **应用端配置示例**:
+```python
+# smart_scheduler/config.py
+import os
+
+# 数据库连接配置
+PG_CONN_STRING = os.getenv('PG_CONN_STRING', 'postgresql://postgres:postgres@localhost:5432/dataops')
+
+# API服务配置
+API_HOST = os.getenv('API_HOST', '0.0.0.0')
+API_PORT = int(os.getenv('API_PORT', '5000'))
+```
+
+4. **Airflow端配置示例**:
+```python
+# dags/config.py
+from airflow.models import Variable
+
+# 调度器API配置
+SCHEDULER_API_URL = Variable.get('scheduler_api_url', 'http://localhost:5000')
+
+# 默认DAG参数
+DEFAULT_RETRIES = int(Variable.get('default_retries', '5'))
+```
+
+5. **部署注意事项**:
+   - 应用端部署需要包含`smart_scheduler`目录及其配置
+   - Airflow端部署需要包含`dags`目录及其配置
+   - 各环境的特定配置可通过环境变量或本地配置文件提供 
