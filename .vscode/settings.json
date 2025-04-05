@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "C:/Projects/cursor_projects/airflow_scheduling/.venv/Scripts/python.exe",
+    "code-runner.executorMap": {
+      "python": "C:/Projects/cursor_projects/airflow_scheduling/.venv/Scripts/python.exe"
+    },
+    "code-runner.runInTerminal": true
+}
